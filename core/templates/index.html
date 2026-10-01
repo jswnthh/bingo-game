@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Prof Bingo{% endblock %}
+
+{% block welcome %}
+<div class="container" id="welcome">
+    <img class="welcome-image" src="{% static 'images/bomb-cat.jpeg' %}" alt="Welcome to Professor Bingo">
+</div>
+<script>
+    (function () {
+        if (sessionStorage.getItem("prof-bingo-welcome-seen")) {
+            var el = document.getElementById("welcome");
+            if (el) el.remove();
+        }
+    })();
+</script>
+{% endblock %}
+
+{% block body %}
+<div class="wrap wrap-landing">
+    <div class="poster">
+        <div class="paper"></div>
+        <div class="stain"></div>
+        {% include "partials/poster_header.html" %}
+        <div class="grid" id="grid">
+            <div class="grid-empty">Create a room or join with a code to get your card.</div>
+        </div>
+        {% include "partials/poster_foot.html" with room_title="Prof Bingo" room_code="------" %}
+    </div>
+
+    <div class="side side-home">
+        <header class="side-hero">
+            <h2>Spot the pattern. Win the lecture.</h2>
+            <p>Mark the habits you hear in class. First to complete a line shouts bingo.</p>
+        </header>
+
+        <section class="home-action home-action--primary" aria-labelledby="home-create-heading">
+            <h3 class="home-action-label" id="home-create-heading">Create a game</h3>
+            <a class="btn red link-btn home-create-btn" href="{% url 'create_room' %}">Create a game <span>&rarr;</span></a>
+        </section>
+
+        <section class="home-action home-action--join" aria-labelledby="home-join-heading">
+            <form class="home-join-form" method="post" action="{% url 'index' %}">
+                {% csrf_token %}
+                <h3 class="home-action-label" id="home-join-heading">Join a game</h3>
+                {% if join_form.code.errors %}
+                <div class="msg form-error home-form-error">{{ join_form.code.errors.0 }}</div>
+                {% endif %}
+                <label class="sr-only" for="{{ join_form.code.id_for_label }}">Room code</label>
+                <div class="code-row code-row--join">
+                    {{ join_form.code }}
+                    <button type="submit" class="btn teal code-row-btn">Join <span>&rarr;</span></button>
+                </div>
+            </form>
+        </section>
+
+        <section class="home-action home-action--watch" aria-labelledby="home-watch-heading">
+            <form class="home-join-form" method="post" action="{% url 'watch_room' %}">
+                {% csrf_token %}
+                <h3 class="home-action-label home-action-label--quiet" id="home-watch-heading">Watch as audience</h3>
+                <label class="sr-only" for="id_audience_code">Room code</label>
+                <div class="code-row code-row--watch">
+                    <input type="text" name="code" id="id_audience_code" class="field-input code-row-input"
+                        maxlength="6" placeholder="ENTER ROOM CODE" autocomplete="off" spellcheck="false">
+                    <button type="submit" class="btn out code-row-btn">Watch <span>&rarr;</span></button>
+                </div>
+            </form>
+        </section>
+    </div>
+</div>
+{% endblock %}

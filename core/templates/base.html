@@ -1,0 +1,26 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Prof Bingo{% endblock %}</title>
+    <link rel="stylesheet" href="{% static 'index.css' %}">
+    {% block extra_head %}{% endblock %}
+</head>
+
+<body>
+    {% block welcome %}{% endblock %}
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+        <filter id="rough">
+            <feTurbulence type="fractalNoise" baseFrequency=".06" numOctaves="3" seed="7" result="t" />
+            <feDisplacementMap in="SourceGraphic" in2="t" scale="16" />
+        </filter>
+    </svg>
+    {% block body %}{% endblock %}
+    <script src="{% static 'index.js' %}"></script>
+    {% block extra_js %}{% endblock %}
+</body>
+
+</html>

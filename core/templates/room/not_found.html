@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+
+{% block title %}Room not found · Prof Bingo{% endblock %}
+
+{% block body %}
+<div class="wrap">
+    <div class="poster">
+        <div class="paper"></div>
+        <div class="stain"></div>
+        {% include "partials/poster_header.html" %}
+        <div class="grid">
+            <div class="grid-empty">No room found for code {{ code }}.</div>
+        </div>
+        {% include "partials/poster_foot.html" with room_title="Unknown" room_code=code %}
+    </div>
+
+    <div class="side">
+        <h2>That code doesn't match a room</h2>
+        <p>Double-check the 6-character code, or ask your host to share the link again.</p>
+        <a class="btn teal link-btn" href="{% url 'join_room' %}">Try another code</a>
+        <a class="btn out link-btn" href="{% url 'index' %}">Home</a>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Play · {{ room.title }}{% endblock %}
+
+{% block extra_head %}
+<meta name="csrf-token" content="{{ csrf_token }}">
+{% endblock %}
+
+{% block body %}
+<div class="wrap wrap-play">
+    <div class="poster poster--play">
+        <div class="paper"></div>
+        <div class="stain"></div>
+        <header class="head head--play">
+            <h1 class="play-brand">
+                <span class="prof">Prof</span>
+                <span class="play-brand-gap" aria-hidden="true"></span>
+                <span class="bingo">Bingo</span>
+            </h1>
+            <p class="play-room-code">Room {{ room.code }}</p>
+        </header>
+        <div class="grid grid--play" id="grid" data-room-code="{{ room.code }}"
+            data-completed-lines="{{ completed_lines_json }}">
+            {% for square in squares %}
+            {% if square.is_free %}
+            <div class="cell free{% if square.position in highlight %} line{% endif %}"
+                data-position="{{ square.position }}">
+                <span class="free-label">FREE</span>
+            </div>
+            {% else %}
+            <button type="button"
+                class="cell play-cell{% if square.marked %} on{% endif %}{% if square.position in highlight %} line{% endif %}"
+                data-square-id="{{ square.id }}" data-position="{{ square.position }}"
+                data-mark-url="{% url 'toggle_mark' room.code square.id %}"
+                aria-pressed="{% if square.marked %}true{% else %}false{% endif %}">
+                <span class="phrase">{{ square.phrase.text }}</span>
+                {% if square.marked %}
+                <div class="blot" aria-hidden="true"></div>
+                {% endif %}
+            </button>
+            {% endif %}
+            {% endfor %}
+        </div>
+        <div class="play-status-strip" aria-live="polite">
+            <span class="play-status-nick">{{ player.nickname }}</span>
+            <span class="play-status-stats" id="play-status-stats">—</span>
+        </div>
+        <div class="win{% if show_bingo %} show{% endif %}" id="win"><b>BINGO!</b></div>
+    </div>
+
+    <aside class="side side--play">
+        {% include "partials/scoreboard.html" with current_player_id=player.id scoreboard_variant="scoreboard--play" %}
+        <div class="share-play-wrap">
+            <button type="button" class="btn out btn-share-play" id="share-room"
+                data-url="{{ request.build_absolute_uri }}" data-title="{{ room.title }}">
+                <span class="btn-share-play__label">Share room</span>
+                <span class="btn-share-play__icon" aria-hidden="true">↗</span>
+            </button>
+            <p class="share-toast" id="share-hint" hidden role="status">LINK COPIED ✓</p>
+        </div>
+    </aside>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'room.js' %}"></script>
+{% endblock %}

@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}Create room · Prof Bingo{% endblock %}
+
+{% block body %}
+<div class="wrap">
+    <div class="poster">
+        <div class="paper"></div>
+        <div class="stain"></div>
+        {% include "partials/poster_header.html" %}
+        <div class="grid">
+            <div class="grid-empty">Your class card appears after you create the room.</div>
+        </div>
+        {% include "partials/poster_foot.html" with room_title="New room" room_code="------" %}
+    </div>
+
+    <div class="side">
+        <h2>Create a game</h2>
+        <p>Add your subject and at least 24 professor habits. Everyone gets their own shuffled card.</p>
+
+        <form class="panel-form panel show" method="post" action="">
+            {% csrf_token %}
+            {% if form.non_field_errors %}
+            <div class="msg form-error">{{ form.non_field_errors.0 }}</div>
+            {% endif %}
+
+            <label for="{{ form.title.id_for_label }}">{{ form.title.label }}</label>
+            {{ form.title }}
+            {% if form.title.errors %}
+            <div class="msg form-error">{{ form.title.errors.0 }}</div>
+            {% endif %}
+
+            <label for="{{ form.phrases.id_for_label }}">{{ form.phrases.label }}</label>
+            <p class="field-help">{{ form.phrases.help_text }}</p>
+            {{ form.phrases }}
+            {% if form.phrases.errors %}
+            <div class="msg form-error">{{ form.phrases.errors.0 }}</div>
+            {% endif %}
+
+            <button type="submit" class="btn red form-submit">Create room <span>&rarr;</span></button>
+            <p class="back-link"><a href="{% url 'index' %}">&larr; Back home</a></p>
+        </form>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block title %}Watch · Prof Bingo{% endblock %}
+
+{% block body %}
+<div class="wrap">
+    <div class="poster">
+        <div class="paper"></div>
+        <div class="stain"></div>
+        {% include "partials/poster_header.html" %}
+        <div class="grid">
+            <div class="grid-empty">Enter a room code to watch as audience.</div>
+        </div>
+        {% include "partials/poster_foot.html" with room_title="Audience" room_code="------" %}
+    </div>
+
+    <div class="side">
+        <h2>Watch as audience</h2>
+        <p>Follow the live scoreboard without joining as a player.</p>
+
+        <form class="panel-form panel show" method="post" action="">
+            {% csrf_token %}
+            <label for="{{ form.code.id_for_label }}">{{ form.code.label }}</label>
+            {{ form.code }}
+            {% if form.code.errors %}
+            <div class="msg form-error">{{ form.code.errors.0 }}</div>
+            {% endif %}
+            <button type="submit" class="btn out form-submit">Watch <span>&rarr;</span></button>
+            <p class="back-link"><a href="{% url 'index' %}">&larr; Back home</a></p>
+        </form>
+    </div>
+</div>
+{% endblock %}

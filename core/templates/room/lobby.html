@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}{{ room.title }} · Prof Bingo{% endblock %}
+
+{% block body %}
+<div class="wrap">
+    <div class="poster">
+        <div class="paper"></div>
+        <div class="stain"></div>
+        {% include "partials/poster_header.html" %}
+        <div class="grid">
+            <div class="grid-empty lobby-card">
+                <p class="lobby-title">{{ room.title }}</p>
+                <p class="lobby-code">Room code: <strong>{{ room.code }}</strong></p>
+                <p class="lobby-meta"><span id="lobby-player-count">{{ player_count }}</span> player<span id="lobby-player-count-plural">{% if player_count != 1 %}s{% endif %}</span> joined</p>
+            </div>
+        </div>
+        {% include "partials/poster_foot.html" with room_title=room.title room_code=room.code %}
+    </div>
+
+    <div class="side">
+        <h2>{{ room.title }}</h2>
+        <p>Share this room so classmates can join. Pick a nickname to get your personal bingo card.</p>
+
+        <button type="button" class="btn red" id="share-room" data-url="{{ share_url }}" data-title="{{ room.title }}">
+            Share room <span>&rarr;</span>
+        </button>
+        <p class="share-hint" id="share-hint" hidden>Link copied to clipboard.</p>
+
+        {% include "partials/scoreboard.html" %}
+
+        <form class="panel-form panel show" method="post" action="">
+            {% csrf_token %}
+            <label for="{{ nickname_form.nickname.id_for_label }}">{{ nickname_form.nickname.label }}</label>
+            {{ nickname_form.nickname }}
+            {% if nickname_form.nickname.errors %}
+            <div class="msg form-error">{{ nickname_form.nickname.errors.0 }}</div>
+            {% endif %}
+            <button type="submit" class="btn teal form-submit">Get my card <span>&rarr;</span></button>
+        </form>
+
+        <a class="btn out link-btn" href="{% url 'room_audience' room.code %}">Watch as audience <span>&rarr;</span></a>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'room.js' %}"></script>
+{% endblock %}

@@ -1,0 +1,27 @@
+<section
+    class="scoreboard{% if scoreboard_variant %} {{ scoreboard_variant }}{% endif %}"
+    id="scoreboard"
+    data-room-code="{{ room.code }}"
+    data-scores-url="{% url 'room_scores' room.code %}"
+    {% if current_player_id %}data-current-player-id="{{ current_player_id }}"{% endif %}
+    aria-live="polite"
+    aria-atomic="false"
+>
+    <h3 class="scoreboard-heading">Live scores</h3>
+    <div class="scoreboard-rule" aria-hidden="true"></div>
+    <table class="score-table">
+        <thead>
+            <tr>
+                <th scope="col" class="score-col-rank">#</th>
+                <th scope="col" class="score-col-player">Player</th>
+                <th scope="col" class="score-col-num">Marks</th>
+                <th scope="col" class="score-col-num">Lines</th>
+            </tr>
+        </thead>
+        <tbody id="scoreboard-body">
+            <tr>
+                <td colspan="4" class="score-empty">Connecting…</td>
+            </tr>
+        </tbody>
+    </table>
+</section>

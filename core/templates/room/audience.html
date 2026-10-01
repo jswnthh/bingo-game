@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Audience · {{ room.title }}{% endblock %}
+
+{% block body %}
+<div class="wrap">
+    <div class="poster">
+        <div class="paper"></div>
+        <div class="stain"></div>
+        {% include "partials/poster_header.html" %}
+        <div class="grid">
+            <div class="grid-empty lobby-card audience-card">
+                <p class="lobby-title">{{ room.title }}</p>
+                <p class="lobby-code">Room code: <strong>{{ room.code }}</strong></p>
+                <p class="audience-badge">Audience mode</p>
+                <p class="lobby-meta">Watching the live scoreboard — no card needed.</p>
+            </div>
+        </div>
+        {% include "partials/poster_foot.html" with room_title=room.title room_code=room.code %}
+    </div>
+
+    <div class="side">
+        <h2>Audience</h2>
+        <p>You’re viewing <strong>{{ room.title }}</strong>. Scores update automatically as players mark their cards.</p>
+
+        <button type="button" class="btn red" id="share-room" data-url="{{ share_url }}" data-title="{{ room.title }}">
+            Share room <span>&rarr;</span>
+        </button>
+        <p class="share-hint" id="share-hint" hidden>Link copied to clipboard.</p>
+
+        {% include "partials/scoreboard.html" %}
+
+        <a class="btn teal link-btn" href="{% url 'room_lobby' room.code %}">Play instead — get a card</a>
+        <a class="btn out link-btn" href="{% url 'index' %}">Home</a>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'room.js' %}"></script>
+{% endblock %}
