@@ -1,0 +1,40 @@
+# Render Blueprint: Prof Bingo (Django + Channels + Daphne)
+# Connect repo in Render Dashboard → New → Blueprint, or add services manually using these values.
+#
+# Live scoreboards and WebSockets require Redis; attach the Key Value instance below.
+
+databases:
+  - name: profbingo-db
+    plan: free
+    databaseName: profbingo
+    user: profbingo
+
+services:
+  - type: keyvalue
+    name: profbingo-redis
+    plan: free
+    ipAllowList: []
+
+  - type: web
+    name: profbingo
+    plan: free
+    runtime: python
+    buildCommand: "./build.sh"
+    startCommand: "daphne -b 0.0.0.0 -p $PORT bingoproject.asgi:application"
+    healthCheckPath: /health/
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+      - key: DEBUG
+        value: "false"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: profbingo-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: profbingo-redis
+          property: connectionString
