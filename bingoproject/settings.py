@@ -142,20 +142,30 @@ TIME_ZONE = "UTC"
 USE_I18N = True
 USE_TZ = True
 
-STATIC_URL = "static/"
+STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_DIRS = [
     BASE_DIR / "static",
 ]
+
+# Manifest/hashed filenames (CompressedManifestStaticFilesStorage) rewrite CSS url()
+# paths and require staticfiles.json; that often breaks deploys when paths drift.
+# Production uses plain names + gzip via WhiteNoise; {% static %} stays stable.
+if DEBUG:
+    _STATICFILES_BACKEND = "django.contrib.staticfiles.storage.StaticFilesStorage"
+else:
+    _STATICFILES_BACKEND = "whitenoise.storage.CompressedStaticFilesStorage"
 
 STORAGES = {
     "default": {
         "BACKEND": "django.core.files.storage.FileSystemStorage",
     },
     "staticfiles": {
-        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+        "BACKEND": _STATICFILES_BACKEND,
     },
 }
+
+WHITENOISE_MAX_AGE = int(os.environ.get("WHITENOISE_MAX_AGE", "3600"))
 
 EMAIL_BACKEND = os.environ.get(
     "EMAIL_BACKEND",
