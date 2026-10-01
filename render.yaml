@@ -20,7 +20,7 @@ services:
     plan: free
     runtime: python
     buildCommand: "./build.sh"
-    startCommand: "daphne -b 0.0.0.0 -p $PORT bingoproject.asgi:application"
+    startCommand: "./start.sh"
     healthCheckPath: /health/
     envVars:
       - key: PYTHON_VERSION
