@@ -166,6 +166,10 @@ STORAGES = {
 }
 
 WHITENOISE_MAX_AGE = int(os.environ.get("WHITENOISE_MAX_AGE", "3600"))
+WHITENOISE_USE_FINDERS = _env_bool(
+    "WHITENOISE_USE_FINDERS",
+    default=IS_RENDER,
+)
 
 EMAIL_BACKEND = os.environ.get(
     "EMAIL_BACKEND",
