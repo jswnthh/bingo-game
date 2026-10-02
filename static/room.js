@@ -1,5 +1,8 @@
 const BINGO_FLASH_MS = 2800;
-const WS_MAX_RECONNECT = 5;
+const WS_MAX_DELAY_MS = 30000;
+const WS_TIMEOUT_MS = 10000;
+const POLL_FALLBACK_MS = 5000;
+const POLL_LIVE_MS = 15000;
 const WS_BASE_MS = 1200;
 const SHARE_TOAST_MS = 2000;
 
@@ -9,6 +12,16 @@ let announcedLineIndices = new Set();
 let roomSocket = null;
 let reconnectAttempts = 0;
 let reconnectTimer = null;
+let socketTimer = null;
+let pollTimer = null;
+let pollController = null;
+let stopped = false;
+let socketHealthy = false;
+let scoreGeneration = 0;
+let eventCursor = null;
+const seenBingoEvents = new Set();
+const remoteBingoQueue = [];
+let remoteBingoTimer = null;
 
 function loadAnnouncedLines(grid) {
   announcedLineIndices = new Set();
@@ -91,15 +104,7 @@ function showBingoAnnouncement(customLabel) {
   }, BINGO_FLASH_MS);
 }
 
-function localPlayerNickname() {
-  const nick = document.querySelector(".play-meta-bar__nick");
-  return nick ? nick.textContent.trim() : "";
-}
-
 function showRemoteBingo(playerName) {
-  if (playerName && playerName === localPlayerNickname()) {
-    return;
-  }
   const win = document.getElementById("win");
   if (win) {
     showBingoAnnouncement(playerName ? `${playerName} — BINGO!` : "BINGO!");
@@ -377,6 +382,114 @@ function getRoomCode() {
   return null;
 }
 
+function setConnectionStatus(message, state) {
+  const status = document.getElementById("connection-status");
+  if (status) {
+    status.textContent = message;
+    status.dataset.state = state;
+  }
+}
+
+function announceNextRemoteBingo() {
+  if (!remoteBingoQueue.length) {
+    remoteBingoTimer = null;
+    return;
+  }
+  showRemoteBingo(remoteBingoQueue.shift());
+  remoteBingoTimer = window.setTimeout(announceNextRemoteBingo, BINGO_FLASH_MS + 200);
+}
+
+function receiveBingo(event) {
+  if (!Number.isSafeInteger(event.event_id)) {
+    return;
+  }
+  if (seenBingoEvents.has(event.event_id) ||
+      (eventCursor !== null && event.event_id <= eventCursor)) {
+    return;
+  }
+  seenBingoEvents.add(event.event_id);
+  if (event.player_id === getCurrentPlayerId()) {
+    return;
+  }
+  remoteBingoQueue.push(event.player);
+  if (!remoteBingoTimer) {
+    announceNextRemoteBingo();
+  }
+}
+
+function saveEventCursor(roomCode) {
+  try {
+    sessionStorage.setItem(`bingo-events:${roomCode}`, String(eventCursor));
+  } catch {
+    // Recovery still works within this page when storage is unavailable.
+  }
+}
+
+function schedulePoll(roomCode, delay) {
+  window.clearTimeout(pollTimer);
+  if (!stopped) {
+    pollTimer = window.setTimeout(() => refreshScores(roomCode), delay);
+  }
+}
+
+async function refreshScores(roomCode) {
+  if (stopped || pollController) {
+    return;
+  }
+  const board = document.getElementById("scoreboard");
+  if (!board?.dataset.scoresUrl) {
+    return;
+  }
+  const url = new URL(board.dataset.scoresUrl, window.location.href);
+  if (eventCursor !== null) {
+    url.searchParams.set("after", String(eventCursor));
+  }
+  const controller = new AbortController();
+  pollController = controller;
+  const timeout = window.setTimeout(() => controller.abort(), WS_TIMEOUT_MS);
+  const generation = scoreGeneration;
+  let hasMore = false;
+  try {
+    const response = await fetch(url, {
+      credentials: "same-origin",
+      cache: "no-store",
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      throw new Error("Score refresh failed");
+    }
+    const data = await response.json();
+    if (stopped || controller.signal.aborted) return;
+    // A socket update received during this fetch is more recent than this snapshot.
+    if (generation === scoreGeneration) {
+      updateScoreboardFromServer(data.players);
+      updatePlayerCount(data.players.length);
+    }
+    (data.events || []).forEach(receiveBingo);
+    eventCursor = data.event_cursor;
+    saveEventCursor(roomCode);
+    for (const id of seenBingoEvents) {
+      if (id <= eventCursor) seenBingoEvents.delete(id);
+    }
+    hasMore = data.has_more_events;
+    if (!socketHealthy) {
+      setConnectionStatus("Reconnecting · scores refresh every 5 seconds", "reconnecting");
+    }
+  } catch {
+    if (!stopped) {
+      setConnectionStatus(
+        socketHealthy ? "Live connected · retrying missed-event check" : "Connection interrupted · retrying",
+        socketHealthy ? "reconnecting" : "offline",
+      );
+    }
+  } finally {
+    window.clearTimeout(timeout);
+    if (pollController === controller) pollController = null;
+    schedulePoll(roomCode, hasMore ? 0 : socketHealthy ? POLL_LIVE_MS : POLL_FALLBACK_MS);
+  }
+}
+
 function handleRoomSocketMessage(event) {
   let data;
   try {
@@ -384,16 +497,17 @@ function handleRoomSocketMessage(event) {
   } catch {
     return;
   }
-
   switch (data.type) {
     case "score_update":
+      scoreGeneration += 1;
       updateScoreboardFromServer(data.players);
+      updatePlayerCount(data.players.length);
       break;
     case "player_joined":
       updatePlayerCount(data.player_count);
       break;
     case "bingo":
-      showRemoteBingo(data.player);
+      receiveBingo(data);
       break;
     default:
       break;
@@ -401,61 +515,110 @@ function handleRoomSocketMessage(event) {
 }
 
 function scheduleReconnect(roomCode) {
-  if (reconnectAttempts >= WS_MAX_RECONNECT) {
-    return;
-  }
+  if (stopped || reconnectTimer !== null) return;
+  const delay = Math.min(WS_MAX_DELAY_MS, WS_BASE_MS * 2 ** Math.min(reconnectAttempts, 5));
   reconnectAttempts += 1;
-  const delay = WS_BASE_MS * reconnectAttempts;
   reconnectTimer = window.setTimeout(() => {
+    reconnectTimer = null;
     connectRoomSocket(roomCode);
-  }, delay);
+  }, delay * (0.8 + Math.random() * 0.2));
+}
+
+function disconnectSocket(socket, roomCode) {
+  // Late callbacks from an old socket must never close its replacement.
+  if (roomSocket !== socket) return;
+  roomSocket = null;
+  socketHealthy = false;
+  window.clearTimeout(socketTimer);
+  socket.close();
+  if (!stopped) {
+    setConnectionStatus("Reconnecting · refreshing scores", "reconnecting");
+    schedulePoll(roomCode, 0);
+    scheduleReconnect(roomCode);
+  }
+}
+
+function scheduleHeartbeat(socket, roomCode) {
+  window.clearTimeout(socketTimer);
+  socketTimer = window.setTimeout(() => {
+    if (roomSocket !== socket) return;
+    if (socket.readyState !== WebSocket.OPEN) {
+      disconnectSocket(socket, roomCode);
+      return;
+    }
+    socket.send(JSON.stringify({ type: "ping" }));
+    socketTimer = window.setTimeout(() => disconnectSocket(socket, roomCode), WS_TIMEOUT_MS);
+  }, 20000);
 }
 
 function connectRoomSocket(roomCode) {
-  if (!roomCode) {
-    return;
-  }
-
-  if (roomSocket) {
-    roomSocket.close();
-    roomSocket = null;
-  }
-
+  if (!roomCode || stopped || roomSocket) return;
   const protocol = window.location.protocol === "https:" ? "wss" : "ws";
   const url = `${protocol}://${window.location.host}/ws/room/${encodeURIComponent(roomCode)}/`;
-
-  roomSocket = new WebSocket(url);
-
-  roomSocket.addEventListener("open", () => {
-    reconnectAttempts = 0;
-  });
-
-  roomSocket.addEventListener("message", handleRoomSocketMessage);
-
-  roomSocket.addEventListener("close", () => {
-    roomSocket = null;
+  let socket;
+  try {
+    socket = new WebSocket(url);
+  } catch {
     scheduleReconnect(roomCode);
+    return;
+  }
+  roomSocket = socket;
+  socketTimer = window.setTimeout(() => disconnectSocket(socket, roomCode), WS_TIMEOUT_MS);
+  socket.addEventListener("open", () => {
+    if (roomSocket !== socket) return;
+    // Require a server message before declaring this connection healthy.
+    schedulePoll(roomCode, 0);
   });
-
-  roomSocket.addEventListener("error", () => {
-    roomSocket?.close();
+  socket.addEventListener("message", (event) => {
+    if (roomSocket !== socket) return;
+    socketHealthy = true;
+    reconnectAttempts = 0;
+    setConnectionStatus("Live · connected", "live");
+    scheduleHeartbeat(socket, roomCode);
+    handleRoomSocketMessage(event);
   });
+  socket.addEventListener("close", () => disconnectSocket(socket, roomCode));
+  socket.addEventListener("error", () => disconnectSocket(socket, roomCode));
 }
 
 function initRoomWebSocket() {
   const roomCode = getRoomCode();
-  if (!roomCode) {
-    return;
+  if (!roomCode) return;
+  try {
+    const stored = sessionStorage.getItem(`bingo-events:${roomCode}`);
+    const value = Number(stored);
+    if (stored !== null && Number.isSafeInteger(value) && value >= 0) eventCursor = value;
+  } catch {
+    // Storage is optional.
   }
+  const resume = () => {
+    stopped = false;
+    window.clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+    reconnectAttempts = 0;
+    if (roomSocket) disconnectSocket(roomSocket, roomCode);
+    window.clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+    connectRoomSocket(roomCode);
+    schedulePoll(roomCode, 0);
+  };
   connectRoomSocket(roomCode);
-
-  window.addEventListener("beforeunload", () => {
-    if (reconnectTimer) {
-      window.clearTimeout(reconnectTimer);
-    }
-    if (roomSocket) {
-      roomSocket.close();
-    }
+  schedulePoll(roomCode, 0);
+  window.addEventListener("online", resume);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") resume();
+  });
+  window.addEventListener("pagehide", () => {
+    stopped = true;
+    window.clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+    window.clearTimeout(pollTimer);
+    window.clearTimeout(socketTimer);
+    pollController?.abort();
+    if (roomSocket) disconnectSocket(roomSocket, roomCode);
+  });
+  window.addEventListener("pageshow", (event) => {
+    if (event.persisted) resume();
   });
 }
 

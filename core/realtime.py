@@ -1,9 +1,13 @@
+import asyncio
+import logging
 import os
 
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 
 from .services import normalize_code, room_scoreboard_rows
+
+logger = logging.getLogger(__name__)
 
 
 def room_group_name(room_code: str) -> str:
@@ -14,7 +18,17 @@ def _group_send(room_code: str, message: dict) -> None:
     channel_layer = get_channel_layer()
     if channel_layer is None:
         return
-    async_to_sync(channel_layer.group_send)(room_group_name(room_code), message)
+
+    async def send():
+        await asyncio.wait_for(
+            channel_layer.group_send(room_group_name(room_code), message), timeout=2
+        )
+
+    try:
+        async_to_sync(send)()
+    except Exception:
+        # The database is authoritative; polling recovers even when Redis is down.
+        logger.exception("Live broadcast failed for room %s", room_code)
 
 
 def scoreboard_payload(room, *, current_player_id=None) -> list[dict]:
@@ -47,16 +61,15 @@ def broadcast_player_joined(room, nickname: str) -> None:
     broadcast_score_update(room)
 
 
-def broadcast_bingo(room, nickname: str) -> None:
+def broadcast_bingo(room, event) -> None:
     _group_send(
         room.code,
         {
             "type": "room.message",
             "event_type": "bingo",
-            "player": nickname,
+            **event.payload(),
         },
     )
-    broadcast_score_update(room)
 
 
 def channel_layer_backend_hint() -> str:

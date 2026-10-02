@@ -65,3 +65,18 @@ class CardSquare(models.Model):
     @property
     def is_free(self):
         return self.phrase_id is None
+
+
+class BingoEvent(models.Model):
+    """Durable announcements so clients can catch up after losing a connection."""
+
+    room = models.ForeignKey(Room, on_delete=models.CASCADE, related_name="bingo_events")
+    player = models.ForeignKey(Player, on_delete=models.CASCADE)
+    nickname = models.CharField(max_length=50)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["room", "id"], name="bingo_event_room_id")]
+
+    def payload(self):
+        return {"event_id": self.pk, "player_id": self.player_id, "player": self.nickname}

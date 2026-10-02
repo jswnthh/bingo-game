@@ -70,6 +70,11 @@ def squares_by_position(card, *, fresh=False) -> dict[int, CardSquare]:
 
 def completed_line_indices(card, *, fresh=False) -> list[int]:
     by_pos = squares_by_position(card, fresh=fresh)
+    return completed_lines_for_squares(by_pos.values())
+
+
+def completed_lines_for_squares(squares):
+    by_pos = {square.position: square for square in squares}
     completed = []
     for index, line in enumerate(WIN_LINES):
         if all(by_pos[pos].marked for pos in line):
@@ -122,3 +127,17 @@ def room_scoreboard_rows(room, current_player_id=None) -> list[dict]:
 
     rows.sort(key=lambda item: (-item["lines"], -item["marked"], item["nickname"].lower()))
     return rows
+
+
+def room_event_history(room, after=None):
+    # Read the watermark first; events committed later are picked up next time.
+    latest = room.bingo_events.order_by("-id").values_list("id", flat=True).first() or 0
+    if after is None:
+        return {"events": [], "event_cursor": latest, "has_more_events": False}
+    events = list(room.bingo_events.filter(id__gt=after, id__lte=latest).order_by("id")[:100])
+    cursor = events[-1].pk if events else latest
+    return {
+        "events": [event.payload() for event in events],
+        "event_cursor": cursor,
+        "has_more_events": cursor < latest,
+    }

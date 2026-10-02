@@ -1337,3 +1337,18 @@ button.play-cell:disabled {
         font-size: clamp(5px, 2.2cqi, 10px)
     }
 }
+
+.connection-status {
+    margin: 8px 0 16px;
+    color: var(--ink);
+    font-size: 12px;
+    line-height: 16px;
+}
+
+.connection-status[data-state="live"] {
+    color: var(--teal);
+}
+
+.connection-status[data-state="offline"] {
+    color: var(--red);
+}

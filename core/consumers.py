@@ -14,25 +14,23 @@ class RoomConsumer(AsyncWebsocketConsumer):
         self.room_code = normalize_code(raw_code)
         self.group_name = room_group_name(self.room_code)
 
-        exists = await self.room_exists(self.room_code)
-        if not exists:
+        room = await self.get_room(self.room_code)
+        if not room:
             await self.close()
             return
 
         await self.channel_layer.group_add(self.group_name, self.channel_name)
         await self.accept()
 
-        room = await self.get_room(self.room_code)
-        if room:
-            players = await self.get_scoreboard(room)
-            await self.send(
-                text_data=json.dumps(
-                    {
-                        "type": "score_update",
-                        "players": players,
-                    }
-                )
+        players = await self.get_scoreboard(room)
+        await self.send(
+            text_data=json.dumps(
+                {
+                    "type": "score_update",
+                    "players": players,
+                }
             )
+        )
 
     async def disconnect(self, close_code):
         if hasattr(self, "group_name"):
@@ -47,9 +45,9 @@ class RoomConsumer(AsyncWebsocketConsumer):
         payload["type"] = event["event_type"]
         await self.send(text_data=json.dumps(payload))
 
-    @database_sync_to_async
-    def room_exists(self, code):
-        return Room.objects.filter(code=code).exists()
+    async def receive(self, text_data=None, bytes_data=None):
+        if text_data == '{"type":"ping"}':
+            await self.send(text_data='{"type":"pong"}')
 
     @database_sync_to_async
     def get_room(self, code):

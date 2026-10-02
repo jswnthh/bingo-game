@@ -1,15 +1,18 @@
 import json
 
 from django.db import transaction
-from django.http import JsonResponse
+from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
+from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from .forms import CreateRoomForm, JoinRoomForm, NicknameForm
-from .models import CardSquare, Phrase, Player, Room
+from .models import BingoEvent, CardSquare, Phrase, Player, Room
 from .services import (
-    card_has_bingo,
+    WIN_LINES,
+    completed_lines_for_squares,
+    room_event_history,
     create_card_for_player,
     generate_room_code,
     highlighted_positions,
@@ -211,39 +214,45 @@ def room_play(request, code):
 
 @require_POST
 def toggle_mark(request, code, square_id):
-    room = get_object_or_404(Room, code=normalize_code(code))
-    player = get_player_for_session(request, room)
-    if not player:
-        if _wants_json(request):
-            return JsonResponse({"error": "Not in room."}, status=403)
-        return redirect("room_lobby", code=room.code)
+    with transaction.atomic():
+        # Serialize room mutations, including event IDs, so recovery cursors cannot
+        # skip an event from a concurrent transaction that commits later.
+        room = get_object_or_404(Room.objects.select_for_update(), code=normalize_code(code))
+        player = get_player_for_session(request, room)
+        if not player or not hasattr(player, "card"):
+            if _wants_json(request):
+                return JsonResponse({"error": "Not in room."}, status=403)
+            return redirect("room_lobby", code=room.code)
 
-    square = get_object_or_404(
-        CardSquare,
-        id=square_id,
-        card__player=player,
-    )
-    if square.is_free:
-        if _wants_json(request):
-            return JsonResponse({"error": "Free square."}, status=400)
-        return redirect("room_play", code=room.code)
+        squares = list(player.card.squares.all())
+        square = next((item for item in squares if item.pk == square_id), None)
+        if square is None:
+            raise Http404
+        if square.is_free:
+            if _wants_json(request):
+                return JsonResponse({"error": "Free square."}, status=400)
+            return redirect("room_play", code=room.code)
 
-    card = player.card
-    lines_before = completed_line_indices(card, fresh=True)
-    square.marked = not square.marked
-    square.save(update_fields=["marked"])
-    lines_after = completed_line_indices(card, fresh=True)
-    before_set = set(lines_before)
-    new_lines = [index for index in lines_after if index not in before_set]
-    now_bingo = bool(lines_after)
-    new_bingo = bool(new_lines) and square.marked
-    highlight = sorted(highlighted_positions(card, fresh=True))
+        lines_before = set(completed_lines_for_squares(squares))
+        square.marked = not square.marked
+        square.save(update_fields=["marked"])
+        lines_after = completed_lines_for_squares(squares)
+        new_lines = [index for index in lines_after if index not in lines_before]
+        now_bingo = bool(lines_after)
+        new_bingo = bool(new_lines) and square.marked
+        highlight = sorted({pos for index in lines_after for pos in WIN_LINES[index]})
+        event = None
+        if new_bingo:
+            event = BingoEvent.objects.create(room=room, player=player, nickname=player.nickname)
 
-    from .realtime import broadcast_bingo, broadcast_score_update
+        from .realtime import broadcast_bingo, broadcast_score_update
 
-    broadcast_score_update(room)
-    if new_bingo:
-        broadcast_bingo(room, player.nickname)
+        def publish():
+            broadcast_score_update(room)
+            if event:
+                broadcast_bingo(room, event)
+
+        transaction.on_commit(publish)
 
     if _wants_json(request):
         return JsonResponse(
@@ -269,6 +278,7 @@ def _wants_json(request):
     return "application/json" in accept or request.headers.get("X-Requested-With") == "XMLHttpRequest"
 
 
+@never_cache
 @require_GET
 def room_scores(request, code):
     room = get_room_or_none(code)
@@ -277,11 +287,21 @@ def room_scores(request, code):
 
     player = get_player_for_session(request, room)
     current_id = player.id if player else None
+    after = request.GET.get("after")
+    if after is not None:
+        try:
+            after = int(after)
+            if after < 0 or after > 9223372036854775807:
+                raise ValueError
+        except ValueError:
+            return JsonResponse({"error": "Invalid event cursor."}, status=400)
+    history = room_event_history(room, after)
     rows = room_scoreboard_rows(room, current_player_id=current_id)
 
     return JsonResponse(
         {
             "players": rows,
             "updated_at": timezone.now().isoformat(),
+            **history,
         }
     )
